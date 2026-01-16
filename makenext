@@ -1,49 +1,85 @@
 #!/usr/bin/env bash
+set -e
 
 #################################
-# Colors
+# Resolve script directory
 #################################
-BLUE="\e[38;2;170;220;230m"
-LIGHT_BLUE="\e[38;2;200;235;245m"
-DIM_BLUE="\e[38;2;120;180;200m"
-WHITE="\e[38;2;255;255;255m"
-GREEN="\e[38;2;170;255;200m"
-RED="\e[38;2;255;170;170m"
-RESET="\e[0m"
-BOLD="\e[1m"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$SCRIPT_DIR/scripts/colors"
 
 #################################
-# Banner (gradient)
+# Local dependencies
 #################################
-START_R=255; START_G=255; START_B=255
-END_R=170; END_G=220; END_B=230
+DEPS_DIR="$SCRIPT_DIR/deps"
+FZF_DIR="$DEPS_DIR/fzf"
+FZF_BIN="$FZF_DIR/bin/fzf"
 
-TEXT=$(cat <<'EOF'
-███╗   ██╗███████╗██╗  ██╗████████╗        
-████╗  ██║██╔════╝╚██╗██╔╝╚══██╔══╝        
-██╔██╗ ██║█████╗   ╚███╔╝    ██║           
-██║╚██╗██║██╔══╝   ██╔██╗    ██║           
-██║ ╚████║███████╗██╔╝ ██╗   ██║           
-╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝   ╚═╝           
-                                           
-███╗   ███╗ █████╗ ██╗  ██╗███████╗██████╗ 
-████╗ ████║██╔══██╗██║ ██╔╝██╔════╝██╔══██╗
-██╔████╔██║███████║█████╔╝ █████╗  ██████╔╝
-██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝  ██╔══██╗
-██║ ╚═╝ ██║██║  ██║██║  ██╗███████╗██║  ██║
-╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
-EOF
-)
+#################################
+# Greet
+#################################
+"$SCRIPT_DIR/scripts/greet"
 
-LEN=${#TEXT}; ((LEN<2)) && LEN=2
-for ((i=0;i<LEN;i++)); do
-  C="${TEXT:i:1}"
-  R=$((START_R+(END_R-START_R)*i/(LEN-1)))
-  G=$((START_G+(END_G-START_G)*i/(LEN-1)))
-  B=$((START_B+(END_B-START_B)*i/(LEN-1)))
-  printf "\e[38;2;%d;%d;%dm%s" "$R" "$G" "$B" "$C"
-done
-printf "\e[0m\n\n"
+#################################
+# Ensure fzf (local install)
+#################################
+ensure_fzf() {
+  if [[ -x "$FZF_BIN" ]]; then
+    return
+  fi
+
+  echo -e "${BLUE}➜ fzf not found. Installing locally...${RESET}"
+
+  mkdir -p "$DEPS_DIR"
+
+  git clone --depth 1 https://github.com/junegunn/fzf.git "$FZF_DIR"
+
+  # Build binary only (no shell config changes)
+  "$FZF_DIR/install" --bin
+
+  if [[ ! -x "$FZF_BIN" ]]; then
+    echo -e "${RED}❌ Failed to install fzf${RESET}"
+    exit 1
+  fi
+}
+
+#################################
+# fzf directory selector
+#################################
+select_directory() {
+  ensure_fzf
+
+  local dir="$HOME"
+
+  while true; do
+    choice=$(
+      printf "..\n%s\n[ Select this directory ]\n[ Cancel ]" \
+        "$(ls -d "$dir"/*/ 2>/dev/null | xargs -n1 basename)" |
+      "$FZF_BIN" \
+        --prompt="📁 $dir > " \
+        --height=40% \
+        --border \
+        --ansi
+    )
+
+    case "$choice" in
+      "..")
+        dir="$(dirname "$dir")"
+        ;;
+      "[ Select this directory ]")
+        SELECTED_DIR="$dir"
+        return
+        ;;
+      "[ Cancel ]" | "")
+        echo -e "${RED}Cancelled${RESET}"
+        exit 0
+        ;;
+      *)
+        dir="$dir/$choice"
+        ;;
+    esac
+  done
+}
 
 #################################
 # Info
@@ -60,43 +96,25 @@ read -p "$(echo -e "${BLUE}Continue? (y/n): ${RESET}")" ok
 [[ $ok != "y" && $ok != "yes" ]] && echo -e "${RED}Cancelled${RESET}" && exit 0
 
 #################################
-# Next.js (DEFAULT)
+# Select install directory
 #################################
-echo -e "\n${BLUE}➜ Creating Next.js app${RESET}"
-npx create-next-app@latest . --yes
+select_directory
+cd "$SELECTED_DIR"
 
 #################################
-# shadcn/ui (DEFAULT + NEUTRAL)
+# Next.js installer (FIXED PATH)
 #################################
-echo -e "\n${BLUE}➜ Initializing shadcn/ui (neutral)${RESET}"
+"$SCRIPT_DIR/installers/install-next"
 
-npx shadcn@latest init --yes
-
-# Force neutral color scheme
-cat <<EOF > components.json
-{
-  "\$schema": "https://ui.shadcn.com/schema.json",
-  "style": "default",
-  "rsc": true,
-  "tsx": true,
-  "tailwind": {
-    "config": "tailwind.config.ts",
-    "css": "app/globals.css",
-    "baseColor": "neutral",
-    "cssVariables": true
-  },
-  "aliases": {
-    "components": "@/components",
-    "utils": "@/lib/utils"
-  }
-}
-EOF
+#################################
+# shadcn/ui
+#################################
+"$SCRIPT_DIR/installers/install-shadcn"
 
 #################################
 # ESLint + Prettier
 #################################
 echo -e "\n${BLUE}➜ Setting up ESLint & Prettier${RESET}"
-
 npm install -D prettier eslint-config-prettier eslint-plugin-prettier
 
 cat <<EOF > .prettierrc
@@ -118,7 +136,6 @@ EOF
 # Commitlint
 #################################
 echo -e "\n${BLUE}➜ Setting up Commitlint${RESET}"
-
 npm install -D @commitlint/{cli,config-conventional}
 
 cat <<EOF > commitlint.config.js
@@ -138,68 +155,48 @@ npm install -D husky
 npm pkg set scripts.prepare="husky install"
 npx husky install
 
-#################################
-# npm scripts
-#################################
 npm pkg set scripts.format="prettier --write ."
 npm pkg set scripts.lint="next lint"
 
 #################################
-# Husky Hooks
+# Husky hooks
 #################################
-echo -e "${BLUE}➜ Adding Husky hooks${RESET}"
-
 mkdir -p .husky
 
-# pre-commit
-touch .husky/pre-commit
-cat << 'EOF' > .husky/pre-commit
+cat <<'EOF' > .husky/pre-commit
 npm run lint
 npm run format
 EOF
 chmod +x .husky/pre-commit
 
-# post-commit
-touch .husky/post-commit
 cat <<EOF > .husky/post-commit
 echo "✅ Commit completed successfully"
 EOF
 chmod +x .husky/post-commit
 
-# pre-push
-touch .husky/pre-push
 cat <<EOF > .husky/pre-push
 npx commitlint --from=HEAD~1
 EOF
 chmod +x .husky/pre-push
 
+#################################
+# VSCode settings
+#################################
 mkdir -p .vscode
 cat <<'EOF' > .vscode/settings.json
 {
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": true
-  },
-
-  "eslint.validate": [
-    "javascript",
-    "javascriptreact",
-    "typescript",
-    "typescriptreact"
-  ],
-
-  "files.eol": "\n",
-  "files.trimTrailingWhitespace": true,
-  "files.insertFinalNewline": true
+  }
 }
 EOF
 
-echo -e "${BLUE}➜ Resetting app/page.tsx${RESET}"
-
+#################################
+# Reset page
+#################################
 mkdir -p app
-
 cat <<'EOF' > app/page.tsx
 export default function Home() {
   return (
@@ -210,11 +207,10 @@ export default function Home() {
 }
 EOF
 
-
 #################################
 # Done
 #################################
 echo
 echo -e "${GREEN}🎉 Setup complete!"
-echo -e "${LIGHT_BLUE}Neutral shadcn, clean commits, safe pushes 🛡️${RESET}"
+echo -e "${LIGHT_BLUE}Local deps, clean commits, safe pushes 🛡️${RESET}"
 

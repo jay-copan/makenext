@@ -1,0 +1,10 @@
+# scripts/colors.sh
+BLUE="\e[38;2;170;220;230m"
+LIGHT_BLUE="\e[38;2;200;235;245m"
+DIM_BLUE="\e[38;2;120;180;200m"
+WHITE="\e[38;2;255;255;255m"
+GREEN="\e[38;2;170;255;200m"
+RED="\e[38;2;255;170;170m"
+RESET="\e[0m"
+BOLD="\e[1m"
+
