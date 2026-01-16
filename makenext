@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+
+#################################
+# Colors
+#################################
+BLUE="\e[38;2;170;220;230m"
+LIGHT_BLUE="\e[38;2;200;235;245m"
+DIM_BLUE="\e[38;2;120;180;200m"
+WHITE="\e[38;2;255;255;255m"
+GREEN="\e[38;2;170;255;200m"
+RED="\e[38;2;255;170;170m"
+RESET="\e[0m"
+BOLD="\e[1m"
+
+#################################
+# Banner (gradient)
+#################################
+START_R=255; START_G=255; START_B=255
+END_R=170; END_G=220; END_B=230
+
+TEXT=$(cat <<'EOF'
+███╗   ██╗███████╗██╗  ██╗████████╗        
+████╗  ██║██╔════╝╚██╗██╔╝╚══██╔══╝        
+██╔██╗ ██║█████╗   ╚███╔╝    ██║           
+██║╚██╗██║██╔══╝   ██╔██╗    ██║           
+██║ ╚████║███████╗██╔╝ ██╗   ██║           
+╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝   ╚═╝           
+                                           
+███╗   ███╗ █████╗ ██╗  ██╗███████╗██████╗ 
+████╗ ████║██╔══██╗██║ ██╔╝██╔════╝██╔══██╗
+██╔████╔██║███████║█████╔╝ █████╗  ██████╔╝
+██║╚██╔╝██║██╔══██║██╔═██╗ ██╔══╝  ██╔══██╗
+██║ ╚═╝ ██║██║  ██║██║  ██╗███████╗██║  ██║
+╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+EOF
+)
+
+LEN=${#TEXT}; ((LEN<2)) && LEN=2
+for ((i=0;i<LEN;i++)); do
+  C="${TEXT:i:1}"
+  R=$((START_R+(END_R-START_R)*i/(LEN-1)))
+  G=$((START_G+(END_G-START_G)*i/(LEN-1)))
+  B=$((START_B+(END_B-START_B)*i/(LEN-1)))
+  printf "\e[38;2;%d;%d;%dm%s" "$R" "$G" "$B" "$C"
+done
+printf "\e[0m\n\n"
+
+#################################
+# Info
+#################################
+echo -e "${LIGHT_BLUE}This script will install:${RESET}"
+echo -e "${DIM_BLUE} ▸${WHITE} Next.js (default)"
+echo -e "${DIM_BLUE} ▸${WHITE} shadcn/ui (neutral)"
+echo -e "${DIM_BLUE} ▸${WHITE} ESLint + Prettier"
+echo -e "${DIM_BLUE} ▸${WHITE} Commitlint"
+echo -e "${DIM_BLUE} ▸${WHITE} Husky (pre-commit, post-commit, pre-push)"
+echo
+
+read -p "$(echo -e "${BLUE}Continue? (y/n): ${RESET}")" ok
+[[ $ok != "y" && $ok != "yes" ]] && echo -e "${RED}Cancelled${RESET}" && exit 0
+
+#################################
+# Next.js (DEFAULT)
+#################################
+echo -e "\n${BLUE}➜ Creating Next.js app${RESET}"
+npx create-next-app@latest . --yes
+
+#################################
+# shadcn/ui (DEFAULT + NEUTRAL)
+#################################
+echo -e "\n${BLUE}➜ Initializing shadcn/ui (neutral)${RESET}"
+
+npx shadcn@latest init --yes
+
+# Force neutral color scheme
+cat <<EOF > components.json
+{
+  "\$schema": "https://ui.shadcn.com/schema.json",
+  "style": "default",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "tailwind.config.ts",
+    "css": "app/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils"
+  }
+}
+EOF
+
+#################################
+# ESLint + Prettier
+#################################
+echo -e "\n${BLUE}➜ Setting up ESLint & Prettier${RESET}"
+
+npm install -D prettier eslint-config-prettier eslint-plugin-prettier
+
+cat <<EOF > .prettierrc
+{
+  "semi": true,
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "printWidth": 80
+}
+EOF
+
+cat <<EOF > .prettierignore
+node_modules
+.next
+dist
+EOF
+
+#################################
+# Commitlint
+#################################
+echo -e "\n${BLUE}➜ Setting up Commitlint${RESET}"
+
+npm install -D @commitlint/{cli,config-conventional}
+
+cat <<EOF > commitlint.config.js
+module.exports = {
+  extends: ['@commitlint/config-conventional'],
+};
+EOF
+
+#################################
+# Git + Husky
+#################################
+echo -e "\n${BLUE}➜ Initializing Git${RESET}"
+[ ! -d .git ] && git init
+
+echo -e "${BLUE}➜ Installing Husky${RESET}"
+npm install -D husky
+npm pkg set scripts.prepare="husky install"
+npx husky install
+
+#################################
+# npm scripts
+#################################
+npm pkg set scripts.format="prettier --write ."
+npm pkg set scripts.lint="next lint"
+
+#################################
+# Husky Hooks
+#################################
+echo -e "${BLUE}➜ Adding Husky hooks${RESET}"
+
+mkdir -p .husky
+
+# pre-commit
+touch .husky/pre-commit
+cat << 'EOF' > .husky/pre-commit
+npm run lint
+npm run format
+EOF
+chmod +x .husky/pre-commit
+
+# post-commit
+touch .husky/post-commit
+cat <<EOF > .husky/post-commit
+echo "✅ Commit completed successfully"
+EOF
+chmod +x .husky/post-commit
+
+# pre-push
+touch .husky/pre-push
+cat <<EOF > .husky/pre-push
+npx commitlint --from=HEAD~1
+EOF
+chmod +x .husky/pre-push
+
+mkdir -p .vscode
+cat <<'EOF' > .vscode/settings.json
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  },
+
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true
+}
+EOF
+
+echo -e "${BLUE}➜ Resetting app/page.tsx${RESET}"
+
+mkdir -p app
+
+cat <<'EOF' > app/page.tsx
+export default function Home() {
+  return (
+    <main style={{ padding: '2rem', fontSize: '1.5rem' }}>
+      Hello World 👋
+    </main>
+  );
+}
+EOF
+
+
+#################################
+# Done
+#################################
+echo
+echo -e "${GREEN}🎉 Setup complete!"
+echo -e "${LIGHT_BLUE}Neutral shadcn, clean commits, safe pushes 🛡️${RESET}"
+
