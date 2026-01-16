@@ -59,7 +59,3 @@ No magic — just scripts you can read and trust.
 This project is under active development and is being modularized into smaller scripts.
 
 ---
-
-## 📜 License
-
-MIT
